@@ -15292,44 +15292,45 @@ function ganttInitEvents() {
   if (!chart || chart._gBound) return;
   chart._gBound = true;
 
+  // mousedown : démarrer le suivi (PAS de preventDefault ici — il bloquerait click)
   chart.addEventListener('mousedown', function(e) {
     var rr  = e.target.closest('.g-rh-r');
     var rl  = e.target.closest('.g-rh-l');
     var bar = e.target.closest('.g-bar');
     if (!bar && !rr && !rl) return;
-    var tid = parseInt((rr||rl||bar).dataset.tid);
-    var type= rr?'right':rl?'left':'move';
+    var tid   = parseInt((rr||rl||bar).dataset.tid);
+    var type  = rr?'right':rl?'left':'move';
     var barEl = chart.querySelector('.g-bar[data-tid="'+tid+'"]');
     if (!barEl) return;
-    var task = ganttTasks.find(function(t){ return t.id===tid; });
+    var task  = ganttTasks.find(function(t){ return t.id===tid; });
     if (!task || !task.debut || !task.fin) return;
     var sc = document.getElementById('ganttScroll');
-    _gDrag.on         = true;
-    _gDrag.type       = type;
-    _gDrag.tid        = tid;
-    _gDrag.x0         = e.clientX;
-    _gDrag.dayPx      = parseFloat(barEl.dataset.daypx) || 16;
-    _gDrag.origDebut  = task.debut;
-    _gDrag.origFin    = task.fin;
-    _gDrag.moved      = false;
-    _gDrag.origLeft   = parseFloat(barEl.style.left)  || barEl.offsetLeft;
-    _gDrag.origWidth  = parseFloat(barEl.style.width) || barEl.offsetWidth;
-    _gDrag.barEl      = barEl;
-    _gDrag.scroll0    = sc ? sc.scrollLeft : 0;
-    barEl.style.opacity  = '0.72';
-    barEl.style.zIndex   = '20';
-    barEl.style.cursor   = type==='move' ? 'grabbing' : 'ew-resize';
-    e.preventDefault();
+    _gDrag.on        = true;
+    _gDrag.type      = type;
+    _gDrag.tid       = tid;
+    _gDrag.x0        = e.clientX;
+    _gDrag.dayPx     = parseFloat(barEl.dataset.daypx) || 16;
+    _gDrag.origDebut = task.debut;
+    _gDrag.origFin   = task.fin;
+    _gDrag.moved     = false;
+    _gDrag.origLeft  = parseFloat(barEl.style.left)  || barEl.offsetLeft;
+    _gDrag.origWidth = parseFloat(barEl.style.width) || barEl.offsetWidth;
+    _gDrag.barEl     = barEl;
+    _gDrag.scroll0   = sc ? sc.scrollLeft : 0;
+    barEl.style.opacity = '0.72';
+    barEl.style.zIndex  = '20';
+    barEl.style.cursor  = type==='move' ? 'grabbing' : 'ew-resize';
+    // Pas de e.preventDefault() → permet au click de se déclencher normalement
   });
 
+  // click sur zone vide → désélectionner
   chart.addEventListener('click', function(e) {
-    if (_gDrag.moved) return;
-    if (e.target.closest('.g-rh-r') || e.target.closest('.g-rh-l')) return;
-    var bar = e.target.closest('.g-bar');
-    if (!bar) { ganttSelectedTaskId=null; _ganttUpdateBandeau(); return; }
-    ganttSelectTask(parseInt(bar.dataset.tid));
+    if (e.target.closest('.g-bar') || e.target.closest('.g-rh-r') || e.target.closest('.g-rh-l')) return;
+    ganttSelectedTaskId = null;
+    _ganttUpdateBandeau();
   });
 
+  // dblclick → ouvrir modal
   chart.addEventListener('dblclick', function(e) {
     var bar = e.target.closest('.g-bar');
     if (!bar) return;
@@ -15342,18 +15343,18 @@ function ganttInitEvents() {
     if (!_gDrag.on) return;
     var sc  = document.getElementById('ganttScroll');
     var dx  = (e.clientX - _gDrag.x0) + ((sc?sc.scrollLeft:0) - _gDrag.scroll0);
-    var ddays = Math.round(dx / _gDrag.dayPx);
-    if (ddays !== 0) _gDrag.moved = true;
+    if (Math.abs(dx) > 4) _gDrag.moved = true; // seuil pixel pour distinguer clic/glisser
     var bar = _gDrag.barEl; if (!bar) return;
+    // Feedback visuel fluide (px continus, pas snappé)
     if (_gDrag.type === 'move') {
-      bar.style.left = (_gDrag.origLeft + ddays * _gDrag.dayPx) + 'px';
+      bar.style.left = (_gDrag.origLeft + dx) + 'px';
     } else if (_gDrag.type === 'right') {
-      bar.style.width = Math.max(_gDrag.dayPx, _gDrag.origWidth + ddays * _gDrag.dayPx) + 'px';
+      bar.style.width = Math.max(_gDrag.dayPx, _gDrag.origWidth + dx) + 'px';
     } else {
-      var dl = ddays * _gDrag.dayPx;
-      var nw = _gDrag.origWidth - dl;
-      if (nw >= _gDrag.dayPx) { bar.style.left = (_gDrag.origLeft+dl)+'px'; bar.style.width = nw+'px'; }
+      var nw = _gDrag.origWidth - dx;
+      if (nw >= _gDrag.dayPx) { bar.style.left=(_gDrag.origLeft+dx)+'px'; bar.style.width=nw+'px'; }
     }
+    e.preventDefault(); // ici pour éviter sélection de texte pendant le glisser
   });
 
   document.addEventListener('mouseup', function(e) {
@@ -15361,9 +15362,20 @@ function ganttInitEvents() {
     _gDrag.on = false;
     var bar = _gDrag.barEl;
     if (bar) { bar.style.opacity=''; bar.style.zIndex=''; bar.style.cursor=''; }
+
+    if (!_gDrag.moved) {
+      // C'était un simple clic → sélectionner la tâche
+      ganttSelectTask(_gDrag.tid);
+      _gDrag.moved = false;
+      return;
+    }
+
+    // C'était un vrai glisser → calculer le delta en jours (snappé)
     var sc    = document.getElementById('ganttScroll');
     var dx    = (e.clientX - _gDrag.x0) + ((sc?sc.scrollLeft:0) - _gDrag.scroll0);
     var ddays = Math.round(dx / _gDrag.dayPx);
+    _gDrag.moved = false; // reset pour le prochain clic
+
     if (ddays !== 0) {
       var task = ganttTasks.find(function(t){ return t.id===_gDrag.tid; });
       if (task) {
