@@ -1203,6 +1203,7 @@ window.addEventListener('load', function() {
     <!-- Toolbar -->
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;background:rgba(255,255,255,.9);padding:10px 14px;border-radius:14px;border:1px solid rgba(249,115,22,.18);box-shadow:0 2px 8px rgba(249,115,22,.08)">
       <button class="btn bp" onclick="ganttAddProjModal()" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none">+ Projet</button>
+      <button class="btn bsm" onclick="ganttSyncChantiers()" style="background:linear-gradient(135deg,#10b981,#34d399);color:#fff;border:none" title="Importer automatiquement chantiers, planning équipes et débours">📥 Sync</button>
       <div style="width:1px;height:24px;background:#e2e8f0;margin:0 2px"></div>
       <button class="btn bsm" onclick="ganttNav(-1)">◀</button>
       <div id="ganttLabel" style="font-weight:800;font-size:12px;min-width:170px;text-align:center;color:#1e1b4b">—</div>
@@ -1236,6 +1237,9 @@ window.addEventListener('load', function() {
 
     <!-- KPIs -->
     <div id="ganttKpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:12px"></div>
+
+    <!-- Section Planning Équipes liée -->
+    <div id="ganttPlanSection" style="margin-top:16px"></div>
   </div>
 </div>
 <!-- ══ FIN PAGE GANTT ═══════════════════════════════════════════════════ -->
@@ -14614,6 +14618,7 @@ function ganttAddTaskModal(projId) {
   document.getElementById('gt_note').value   = '';
   var w = document.getElementById('gt_dep_warn');
   if (w) { w.style.display = 'none'; w.textContent = ''; }
+  _ganttFillRespList();
   openOv('ovGanttTask');
 }
 
@@ -14634,6 +14639,7 @@ function ganttEditTaskModal(id) {
   document.getElementById('gt_note').value   = task.note  || '';
   var w = document.getElementById('gt_dep_warn');
   if (w) { w.style.display = 'none'; w.textContent = ''; }
+  _ganttFillRespList();
   openOv('ovGanttTask');
 }
 
@@ -15005,11 +15011,17 @@ function renderGantt() {
         });
 
         var tipTxt = esc(t.nom)+' ('+t.pct+'%) '+esc(t.debut)+' → '+esc(t.fin)+(t.resp?' — '+esc(t.resp):'');
+        if (t._dosId) {
+          var _db = _ganttGetDebours(t._dosId);
+          if (_db && _db.total > 0) tipTxt += ' | Débours : '+Math.round(_db.total).toLocaleString('fr-FR')+' €';
+          var _dos2 = (typeof dos!=='undefined'?dos:[]).find(function(x){return x.id===t._dosId;});
+          if (_dos2 && _dos2.mnt) tipTxt += ' / Facturé : '+Math.round(_dos2.mnt).toLocaleString('fr-FR')+' €';
+        }
         tlHtml += '<div title="'+tipTxt+'" onclick="ganttEditTaskModal('+t.id+')" ';
         tlHtml += 'style="position:absolute;top:'+top2+'px;left:'+x1+'px;width:'+bw+'px;height:22px;';
         tlHtml += 'background:'+bc2+'28;border:1.5px solid '+bc2+';border-radius:5px;overflow:hidden;cursor:pointer;z-index:2">';
         if (pw>0) tlHtml += '<div style="position:absolute;top:0;left:0;width:'+pw+'px;height:100%;background:'+bc2+'70;border-radius:3px 0 0 3px"></div>';
-        if (bw>30) tlHtml += '<div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 5px;font-size:8px;font-weight:800;color:'+bc2+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:1">'+esc(t.nom)+'</div>';
+        if (bw>30) tlHtml += '<div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 5px;font-size:8px;font-weight:800;color:'+bc2+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:1">'+(t._chanNum?'🔗 ':'')+esc(t.nom)+'</div>';
         tlHtml += '</div>';
       }
     }
@@ -15025,6 +15037,41 @@ function renderGantt() {
   // Scroll to today
   var sc = document.getElementById('ganttScroll');
   if (sc && todayOff > 0) sc.scrollLeft = Math.max(0, todayOff - sc.clientWidth/2);
+
+  // ── Section Planning équipes (affectations dans la période visible) ──
+  var planSec = document.getElementById('ganttPlanSection');
+  if (planSec) {
+    var _aff2  = (typeof affectations!=='undefined') ? affectations : [];
+    var _eq2   = (typeof equipes!=='undefined')      ? equipes      : [];
+    var _chan2  = (typeof chan!=='undefined')          ? chan         : [];
+    var startIso = start.toISOString().split('T')[0];
+    var endIso   = end.toISOString().split('T')[0];
+    var visAff = _aff2.filter(function(a){ return a.dateDebut<=endIso && a.dateFin>=startIso; });
+    if (!visAff.length || !_eq2.length) { planSec.innerHTML=''; return; }
+    var PAL=['#6366f1','#10b981','#f59e0b','#ec4899','#06b6d4','#8b5cf6','#ef4444','#f97316'];
+    var ph='<div style="margin-top:4px">';
+    ph+='<div style="font-size:11px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">📅 Planning équipes — période visible</div>';
+    ph+='<div style="display:flex;flex-direction:column;gap:4px">';
+    _eq2.forEach(function(eq, ei) {
+      var col = eq.color||PAL[ei%PAL.length];
+      var affs = visAff.filter(function(a){ return a.equipeId===eq.id; });
+      if (!affs.length) return;
+      ph+='<div style="display:flex;align-items:flex-start;gap:8px;background:rgba(255,255,255,.85);border:1px solid #e2e8f0;border-left:3px solid '+col+';border-radius:8px;padding:8px 12px;flex-wrap:wrap">';
+      ph+='<div style="font-size:11px;font-weight:800;color:#1e293b;min-width:100px">'+esc(eq.emoji||'👷')+' '+esc(eq.nom)+'</div>';
+      ph+='<div style="display:flex;gap:6px;flex-wrap:wrap;flex:1">';
+      affs.forEach(function(a) {
+        var c3 = _chan2.find(function(x){ return x.id===a.chanId; });
+        var lbl3 = c3 ? esc((c3.num?c3.num+' ':'')+c3.adr) : 'Chantier #'+a.chanId;
+        ph+='<div style="background:'+col+'18;border:1px solid '+col+'40;border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;color:#1e293b" title="'+esc(a.dateDebut)+' → '+esc(a.dateFin)+'">';
+        ph+=lbl3+' <span style="color:'+col+';font-size:9px">'+esc(a.dateDebut)+' → '+esc(a.dateFin)+'</span>';
+        if(a.note) ph+=' <span style="color:#64748b;font-style:italic">'+esc(a.note)+'</span>';
+        ph+='</div>';
+      });
+      ph+='</div></div>';
+    });
+    ph+='</div></div>';
+    planSec.innerHTML = ph;
+  }
 }
 
 // ── PRINT ─────────────────────────────────────────────────────────────
@@ -15038,6 +15085,132 @@ function printGantt() {
     + '<h1>📊 Planning Gantt — '+esc(lbl)+'</h1>'
     + container.innerHTML+'</body></html>';
   printHtml(h, 'width=1400,height=900');
+}
+
+// ── CONNEXION DONNÉES EXISTANTES ──────────────────────────────────────
+
+var _GANTT_DUR = { 'TELECOM':21,'OSR':42,'Urg gaz':14,'Urg Elec':10,"Chargé d'affaire":30,'PARTICULIER':28 };
+var _GANTT_COL = { 'TELECOM':'#6366f1','OSR':'#10b981','Urg gaz':'#ef4444','Urg Elec':'#f59e0b',"Chargé d'affaire":'#8b5cf6','PARTICULIER':'#06b6d4' };
+
+function _ganttChanPct(c, d) {
+  if (d && (d.stat==='Clos'||d.stat==='Payé/attente facture')) return 100;
+  if (d && d.stat==='Relevé émis') return 90;
+  if (d && d.stat==='Facture émise') return 80;
+  if (c) { if(c.fin)return 100; if(c.reb)return 75; if(c.bra)return 50; if(c.ter)return 25; }
+  return 5;
+}
+
+function _ganttEstDates(c, d) {
+  var type = (c&&c.type)||(d&&d.type)||'TELECOM';
+  var dur  = _GANTT_DUR[type] || 21;
+  var ds   = (c&&c.ds)||(d&&d.ds)||'';
+  if (!ds) return null;
+  var sd = new Date(ds); sd.setHours(0,0,0,0);
+  var pct = _ganttChanPct(c, d);
+  var ed;
+  if (pct >= 100) {
+    ed = new Date(sd.getTime() + dur*86400000);
+  } else {
+    var progress = new Date(sd.getTime() + Math.round(dur*pct/100)*86400000);
+    var today2 = new Date(); today2.setHours(0,0,0,0);
+    var ref = progress > today2 ? progress : today2;
+    ed = new Date(ref.getTime() + Math.round(dur*(1-pct/100))*86400000);
+  }
+  function pad(n){ return n<10?'0'+n:String(n); }
+  function fmt(x){ return x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate()); }
+  return { debut: fmt(sd), fin: fmt(ed) };
+}
+
+function ganttSyncChantiers() {
+  var _dos  = (typeof dos  !== 'undefined') ? dos  : [];
+  var _chan  = (typeof chan !== 'undefined') ? chan  : [];
+  var _aff   = (typeof affectations !== 'undefined') ? affectations : [];
+  var _eq    = (typeof equipes      !== 'undefined') ? equipes      : [];
+  if (!_dos.length && !_chan.length) { toast('Aucun chantier trouvé','er'); return; }
+
+  var added=0, updated=0;
+  var typeMap = {}; // type → projId
+
+  // Collect unique types
+  _dos.forEach(function(d){ typeMap[d.type||'Autre']=0; });
+  _chan.forEach(function(c){ typeMap[c.type||'Autre']=0; });
+
+  // Create/find project per type
+  Object.keys(typeMap).forEach(function(type) {
+    var proj = ganttProjects.find(function(p){ return p._syncKey==='type:'+type; });
+    if (!proj) {
+      var col = _GANTT_COL[type]||'#94a3b8';
+      proj = { id:nextGPId++, nom:type, desc:'Chantiers '+type, client:'', couleur:col, _syncKey:'type:'+type };
+      ganttProjects.push(proj);
+      added++;
+    }
+    typeMap[type] = proj.id;
+  });
+
+  // Import/update tasks from dossiers
+  _dos.forEach(function(d) {
+    var c     = _chan.find(function(x){ return x.num===d.num; });
+    var dates = _ganttEstDates(c, d);
+    if (!dates) return;
+    var pct   = _ganttChanPct(c, d);
+    var type  = d.type||'Autre';
+    var projId= typeMap[type];
+    if (!projId) return;
+    var label = (d.num?d.num+' — ':'')+(d.adr||'—')+(d.com?' · '+d.com:'');
+    var resp  = (c&&c.ent)||d.resp||'';
+    var isPrio= (type.indexOf('Urg')>=0||d.stat==='Relevé émis')?'haute':'normale';
+    if (pct===100) isPrio='basse';
+
+    // Planning équipes note
+    var planNotes = [];
+    _aff.forEach(function(a) {
+      var ac = _chan.find(function(x){ return x.id===a.chanId; });
+      if (ac && ac.num===d.num) {
+        var eq = _eq.find(function(e){ return e.id===a.equipeId; });
+        if (eq) planNotes.push('📅 Équipe '+eq.nom+' : '+a.dateDebut+' → '+a.dateFin);
+      }
+    });
+
+    var note = d.obs||'';
+    if (planNotes.length) note = (note?note+'\n':'')+planNotes.join('\n');
+
+    var existing = ganttTasks.find(function(t){ return t._dosId===d.id; });
+    if (existing) {
+      existing.nom=label; existing.debut=dates.debut; existing.fin=dates.fin;
+      existing.pct=pct; existing.resp=resp; existing.projId=projId;
+      existing.prio=isPrio; existing.note=note;
+      updated++;
+    } else {
+      ganttTasks.push({ id:nextGTId++, projId:projId, nom:label,
+        debut:dates.debut, fin:dates.fin, pct:pct, resp:resp,
+        prio:isPrio, dep:[], note:note, _dosId:d.id, _chanNum:d.num });
+      added++;
+    }
+  });
+
+  ganttSave(); renderGantt();
+  toast('Sync ✓ — '+added+' ajoutés, '+updated+' mis à jour');
+}
+
+function _ganttGetDebours(dosId) {
+  if (typeof dbStore==='undefined'||!dbStore) return null;
+  var d = dbStore['dos_'+dosId];
+  if (!d) return null;
+  var mo  = (d.mo ||[]).reduce(function(s,r){ return s+(r.h||0)*(r.tx||0); },0);
+  var mat = (d.mat||[]).reduce(function(s,r){ return s+(r.qty||0)*(r.pu||0); },0);
+  var eng = (d.eng||[]).reduce(function(s,r){ return s+(r.d||0)*(r.cj||0); },0);
+  var st  = (d.st ||[]).reduce(function(s,r){ return s+(r.mnt||0); },0);
+  return { mo:mo, mat:mat, eng:eng, st:st, total:mo+mat+eng+st };
+}
+
+function _ganttFillRespList() {
+  var dl = document.getElementById('gtRespList');
+  if (!dl) return;
+  var sals = typeof salaries!=='undefined' ? salaries : [];
+  dl.innerHTML = sals.map(function(s){
+    var n = ((s.nom||'')+' '+(s.prenom||'')).trim();
+    return '<option value="'+esc(n)+'">'+(s.poste||s.dept||'')+'</option>';
+  }).join('');
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────
@@ -16016,7 +16189,8 @@ ganttLoad();
       </div>
       <div class="fgr">
         <label style="color:#94a3b8">Responsable</label>
-        <input type="text" id="gt_resp" placeholder="Nom, équipe…" style="background:#0f172a;border-color:#334155;color:#f1f5f9">
+        <input type="text" id="gt_resp" placeholder="Nom, équipe…" list="gtRespList" style="background:#0f172a;border-color:#334155;color:#f1f5f9">
+        <datalist id="gtRespList"></datalist>
       </div>
       <div class="fgr">
         <label style="color:#94a3b8">Priorité</label>
