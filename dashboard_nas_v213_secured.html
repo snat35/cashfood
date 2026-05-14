@@ -413,7 +413,7 @@ th{padding:10px 10px;font-size:12px;font-weight:900;text-transform:uppercase;let
 /* ── THÈME ORANGE ───────────────────────────────────────── */
 body { background: linear-gradient(160deg,#fff7ed,#ffedd5,#fed7aa,#fef3c7) !important; background-attachment:fixed !important; }
 #pg-dashboard.on,#pg-dossiers.on,#pg-chantiers.on,#pg-planning.on,
-#pg-debourse.on,#pg-financier.on,#pg-pointage.on,#pg-vehicules.on,#pg-params.on {
+#pg-debourse.on,#pg-financier.on,#pg-pointage.on,#pg-vehicules.on,#pg-params.on,#pg-gantt.on {
   background: linear-gradient(150deg,#fff7ed 0%,#ffedd5 50%,#fef3c7 100%) !important;
   min-height: calc(100vh - 65px) !important;
 }
@@ -824,6 +824,10 @@ window.addEventListener('load', function() {
     <div style="width:32px;height:32px;background:#f9731622;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .2s"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 6v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
     <span style="color:#f97316;font-weight:800">Parc véhicules</span>
   </div>
+<div class="ni" onclick="goPage('gantt',this)" title="Planning Gantt">
+    <div style="width:32px;height:32px;background:#06b6d422;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .2s"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="2" rx="1"/><rect x="3" y="9" width="12" height="2" rx="1"/><rect x="3" y="14" width="16" height="2" rx="1"/><rect x="3" y="19" width="8" height="2" rx="1"/></svg></div>
+    <span style="color:#f97316;font-weight:800">Gantt</span>
+  </div>
   <div class="ns" style="color:rgba(249,115,22,.6)">✦ Config</div>
 <div class="ni" id="niTrace" onclick="goPage('tracabilite',this)" title="Traçabilité">
   <div class="ni-ic">🕵️</div>
@@ -1191,6 +1195,66 @@ window.addEventListener('load', function() {
     </div>
   </div>
 </div>
+
+<!-- ══ PAGE GANTT ══════════════════════════════════════════════════════ -->
+<div class="pg" id="pg-gantt">
+  <div class="pg-content" style="padding:14px 16px;max-width:100%">
+
+    <!-- Barre de contrôles -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:rgba(255,255,255,.9);padding:12px 16px;border-radius:14px;border:1px solid rgba(249,115,22,.18);box-shadow:0 2px 8px rgba(249,115,22,.08)">
+      <!-- Navigation -->
+      <button class="btn bsm" onclick="ganttNav(-1)" title="Période précédente">◀</button>
+      <div id="ganttLabel" style="font-weight:800;font-size:13px;min-width:160px;text-align:center;color:#1e1b4b"></div>
+      <button class="btn bsm" onclick="ganttNav(1)" title="Période suivante">▶</button>
+      <button class="btn bsm" onclick="ganttToday()" style="background:#ef4444;color:#fff;border-color:#ef4444" title="Aller à aujourd'hui">⦿ Auj.</button>
+
+      <!-- Zoom -->
+      <div style="display:flex;gap:4px;margin-left:6px">
+        <button id="gzoom_trimestre" class="btn bsm" onclick="ganttSetZoom('trimestre')">3 mois</button>
+        <button id="gzoom_semestre"  class="btn bsm" onclick="ganttSetZoom('semestre')">6 mois</button>
+        <button id="gzoom_annuel"    class="btn bsm" onclick="ganttSetZoom('annuel')">1 an</button>
+      </div>
+
+      <!-- Filtres -->
+      <select id="ganttFType" onchange="renderGantt()" style="font-size:11px;padding:5px 8px;border-radius:8px;border:1.5px solid var(--b);background:#fff">
+        <option value="">Tous types</option>
+        <option>TELECOM</option><option>Urg gaz</option><option>Urg Elec</option>
+        <option>OSR</option><option>Chargé d'affaire</option><option>PARTICULIER</option>
+      </select>
+      <select id="ganttFStatut" onchange="renderGantt()" style="font-size:11px;padding:5px 8px;border-radius:8px;border:1.5px solid var(--b);background:#fff">
+        <option value="">Tous statuts</option>
+        <option>En cours</option><option>Relevé émis</option><option>Payé/attente facture</option><option>Clos</option>
+      </select>
+
+      <!-- Recherche -->
+      <div class="sbx" style="flex:1;min-width:160px;max-width:240px;display:flex;align-items:center;gap:5px;padding:0 10px">
+        <span class="si" style="position:static">🔍</span>
+        <input type="text" id="ganttSearch" placeholder="Rechercher chantier…" oninput="renderGantt()" style="border:none;background:transparent;outline:none;flex:1;font-size:12px;font-weight:700;color:#1a1a1a">
+      </div>
+
+      <!-- Print -->
+      <button class="btn bsm" onclick="printGantt()" style="background:linear-gradient(135deg,#f97316,#fb923c);color:#fff;border:none">🖨️ Imprimer</button>
+    </div>
+
+    <!-- Légende -->
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-size:10px;font-weight:700">
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#6366f1;border-radius:3px;display:inline-block"></span>TELECOM</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#ef4444;border-radius:3px;display:inline-block"></span>Urg gaz</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#f59e0b;border-radius:3px;display:inline-block"></span>Urg Elec</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#10b981;border-radius:3px;display:inline-block"></span>OSR</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#8b5cf6;border-radius:3px;display:inline-block"></span>Chargé d'affaire</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#06b6d4;border-radius:3px;display:inline-block"></span>PARTICULIER</span>
+      <span style="display:flex;align-items:center;gap:4px;margin-left:8px;padding-left:8px;border-left:1px solid #e2e8f0"><span style="width:12px;height:4px;background:#ef4444;border-radius:2px;display:inline-block"></span>Aujourd'hui</span>
+    </div>
+
+    <!-- Diagramme Gantt -->
+    <div id="ganttChart" style="border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)"></div>
+
+    <!-- KPIs synthèse -->
+    <div id="ganttKpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:14px"></div>
+  </div>
+</div>
+<!-- ══ FIN PAGE GANTT ═══════════════════════════════════════════════════ -->
 
 <div class="pg" id="pg-debourse">
   <div class="pg-content">
@@ -3841,7 +3905,7 @@ function goPage(p,el){
   if(!pgEl){console.error('Page not found: pg-'+p);return;}
   pgEl.classList.add('on');
   if(el)el.classList.add('on');
-  var tt={dashboard:'Dashboard',dossiers:'Dossiers',chantiers:'Suivi des chantiers',params:'Paramètres',debourse:'Déboursé sec',planning:'Planning équipes',financier:'Suivi financier',pointage:'RH',vehicules:'Parc véhicules',tracabilite:'🕵️ Traçabilité'};
+  var tt={dashboard:'Dashboard',dossiers:'Dossiers',chantiers:'Suivi des chantiers',params:'Paramètres',debourse:'Déboursé sec',planning:'Planning équipes',financier:'Suivi financier',pointage:'RH',vehicules:'Parc véhicules',tracabilite:'🕵️ Traçabilité',gantt:'📊 Planning Gantt'};
   document.getElementById('pgT').textContent=tt[p]||p;
   var d=new Date();var opts={weekday:'long',day:'numeric',month:'long',year:'numeric'};
   document.getElementById('pgD').textContent=d.toLocaleDateString('fr-FR',opts);
@@ -3849,7 +3913,7 @@ function goPage(p,el){
   document.getElementById('tbA').innerHTML=acts[p]||'';
   if(!can('edit')){var b=document.querySelector('#tbA .btn');if(b)b.style.display='none';}
   var bd=document.getElementById('btnDash');
-  if(bd) bd.style.display=(p==='dossiers'||p==='chantiers'||p==='debourse'||p==='planning'||p==='financier'||p==='pointage'||p==='vehicules')?'inline-flex':'none';
+  if(bd) bd.style.display=(p==='dossiers'||p==='chantiers'||p==='debourse'||p==='planning'||p==='financier'||p==='pointage'||p==='vehicules'||p==='gantt')?'inline-flex':'none';
   try{
     if(p==='dashboard'){renderDash();}
     else if(p==='params'){loadPF();renderEntreprises();renderUList();renderDList();updNN();setTimeout(function(){if(typeof renderUsersList==='function')renderUsersList();},100);}
@@ -3871,6 +3935,7 @@ function goPage(p,el){
     else if(p==='pointage'){setRhTab('pointage');}
     else if(p==='vehicules'){renderVehicules();}
     else if(p==='tracabilite'){renderTrace();}
+    else if(p==='gantt'){renderGantt();}
   }catch(e){
     console.error('goPage error on '+p+':',e);
   }
@@ -14430,6 +14495,264 @@ setTimeout(function() {
   }
 
 }, 1000);
+
+// ══════════════════════════════════════════════════════════════════════
+//  PLANNING GANTT
+// ══════════════════════════════════════════════════════════════════════
+var ganttZoom = 'trimestre';
+var ganttStartDate = new Date();
+
+function ganttSetZoom(z) {
+  ganttZoom = z;
+  ['trimestre','semestre','annuel'].forEach(function(id) {
+    var el = document.getElementById('gzoom_'+id);
+    if (!el) return;
+    if (z === id) { el.style.background='linear-gradient(135deg,var(--ac),#818cf8)'; el.style.color='#fff'; el.style.borderColor='transparent'; }
+    else          { el.style.background=''; el.style.color=''; el.style.borderColor=''; }
+  });
+  renderGantt();
+}
+
+function ganttNav(dir) {
+  var d = new Date(ganttStartDate);
+  var m = ganttZoom==='trimestre' ? 3 : ganttZoom==='semestre' ? 6 : 12;
+  d.setMonth(d.getMonth() + dir * m);
+  ganttStartDate = d;
+  renderGantt();
+}
+
+function ganttToday() {
+  ganttStartDate = new Date();
+  renderGantt();
+}
+
+function renderGantt() {
+  var container = document.getElementById('ganttChart');
+  if (!container) return;
+
+  // Plage visible
+  var start = new Date(ganttStartDate);
+  start.setDate(1); start.setHours(0,0,0,0);
+  var months = ganttZoom==='trimestre' ? 3 : ganttZoom==='semestre' ? 6 : 12;
+  var end = new Date(start); end.setMonth(end.getMonth() + months);
+
+  // Label de période
+  var MO = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Aoû','Sep','Oct','Nov','Déc'];
+  var lbl = document.getElementById('ganttLabel');
+  if (lbl) lbl.textContent = MO[start.getMonth()]+' '+start.getFullYear()+' → '+MO[new Date(end.getTime()-1).getMonth()]+' '+new Date(end.getTime()-1).getFullYear();
+
+  // Init boutons zoom
+  ['trimestre','semestre','annuel'].forEach(function(id) {
+    var el = document.getElementById('gzoom_'+id);
+    if (!el) return;
+    if (ganttZoom===id) { el.style.background='linear-gradient(135deg,var(--ac),#818cf8)'; el.style.color='#fff'; el.style.borderColor='transparent'; }
+    else                { el.style.background=''; el.style.color=''; el.style.borderColor=''; }
+  });
+
+  // Couleurs par type de dossier
+  var TYPE_COLORS = {
+    'TELECOM':'#6366f1','Urg gaz':'#ef4444','Urg Elec':'#f59e0b',
+    'OSR':'#10b981','Chargé d\'affaire':'#8b5cf6','PARTICULIER':'#06b6d4'
+  };
+
+  // Construction des items
+  var items = (chan||[]).filter(function(c){ return !!c.ds; }).map(function(c) {
+    var d = (dos||[]).find(function(x){ return x.num===c.num; }) || {};
+    var pct = c.fin?100 : c.reb?75 : c.bra?50 : c.ter?25 : 5;
+    var type = d.type || c.type || 'TELECOM';
+    var color = TYPE_COLORS[type] || '#f97316';
+    // Durée estimée selon type
+    var durJ = type.indexOf('Urg')>=0 ? 14 : type==='OSR' ? 42 : type==='TELECOM' ? 21 : 28;
+    var sd = new Date(c.ds); sd.setHours(0,0,0,0);
+    var ed;
+    if (pct===100) {
+      ed = new Date(sd.getTime() + durJ*86400000);
+    } else {
+      var done = new Date(sd.getTime() + Math.round(durJ*(pct/100))*86400000);
+      var today = new Date(); today.setHours(0,0,0,0);
+      ed = new Date(Math.max(done.getTime(), today.getTime()) + Math.round(durJ*(1-pct/100))*86400000);
+    }
+    return {
+      c: c, d: d,
+      num: c.num||'',
+      label: (c.num ? c.num+' — ' : '') + (c.adr||'—'),
+      com: c.com || d.com || '',
+      type: type, statut: d.stat||'En cours',
+      pct: pct, color: color,
+      sd: sd, ed: ed
+    };
+  });
+
+  // Filtres
+  var ft = (document.getElementById('ganttFType')||{}).value || '';
+  var fs = (document.getElementById('ganttFStatut')||{}).value || '';
+  var fsr= ((document.getElementById('ganttSearch')||{}).value||'').toLowerCase();
+  if (ft)  items = items.filter(function(x){ return x.type===ft; });
+  if (fs)  items = items.filter(function(x){ return x.statut===fs; });
+  if (fsr) items = items.filter(function(x){ return (x.label+x.com+x.type).toLowerCase().indexOf(fsr)>=0; });
+
+  // Garder ceux qui chevauchent la période visible
+  items = items.filter(function(x){ return x.ed >= start && x.sd <= end; });
+  items.sort(function(a,b){ return a.sd - b.sd; });
+
+  // KPIs synthèse
+  var kpiEl = document.getElementById('ganttKpis');
+  if (kpiEl) {
+    var total = items.length;
+    var enCours = items.filter(function(x){ return x.pct>0 && x.pct<100; }).length;
+    var termines = items.filter(function(x){ return x.pct===100; }).length;
+    var nonDem = items.filter(function(x){ return x.pct<=5; }).length;
+    var avgPct = total ? Math.round(items.reduce(function(s,x){ return s+x.pct; },0)/total) : 0;
+    kpiEl.innerHTML = [
+      ['📋','Chantiers','#6366f1',total],
+      ['🔄','En cours','#f59e0b',enCours],
+      ['✅','Terminés','#10b981',termines],
+      ['⏳','Non démarrés','#94a3b8',nonDem],
+      ['📈','Avancement moy.','#06b6d4',avgPct+'%']
+    ].map(function(k){
+      return '<div style="background:rgba(255,255,255,.9);border:1px solid rgba('+
+        k[2].replace('#','').match(/../g).map(function(h){return parseInt(h,16);}).join(',')+',.25);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;gap:2px">'+
+        '<div style="font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.05em">'+k[0]+' '+k[1]+'</div>'+
+        '<div style="font-size:22px;font-weight:900;color:'+k[2]+'">'+k[3]+'</div></div>';
+    }).join('');
+  }
+
+  if (!items.length) {
+    container.innerHTML = '<div style="text-align:center;padding:60px 20px;color:#94a3b8;font-size:14px;background:#fff;border-radius:12px">📋 Aucun chantier avec date de début sur cette période</div>';
+    return;
+  }
+
+  // Calcul dimensions
+  var totalDays = Math.round((end - start) / 86400000);
+  var dayPx = ganttZoom==='annuel' ? 2.8 : ganttZoom==='semestre' ? 5.2 : 10;
+  var totalW = totalDays * dayPx;
+  var labelW = 230;
+  var rowH = 38;
+  var hdrH = 54;
+  var today = new Date(); today.setHours(0,0,0,0);
+  var todayOff = Math.round((today - start) / 86400000) * dayPx;
+
+  function xOff(d){ return Math.max(0, Math.round((d - start)/86400000) * dayPx); }
+  function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+
+  // Colonnes mois pour header
+  var months_arr = [];
+  var mm = new Date(start);
+  while (mm < end) { months_arr.push(new Date(mm)); mm.setMonth(mm.getMonth()+1); }
+
+  // ── CONSTRUCTION HTML ─────────────────────────────────────
+  var html = '<div style="display:flex;overflow:hidden;border-radius:12px;border:1.5px solid #e2e8f0;background:#fff;box-shadow:0 4px 24px rgba(0,0,0,.08)">';
+
+  // Colonne labels (gauche fixe)
+  html += '<div style="flex-shrink:0;width:'+labelW+'px;z-index:2;background:#fff;border-right:2px solid #e2e8f0">';
+  html += '<div style="height:'+hdrH+'px;background:#0f172a;display:flex;align-items:center;padding:0 14px;border-bottom:2px solid #f97316">';
+  html += '<span style="color:#f97316;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.1em">Chantier / Adresse</span>';
+  html += '</div>';
+  items.forEach(function(item, i) {
+    var bg = i%2===0 ? '#ffffff' : '#fafbff';
+    html += '<div style="height:'+rowH+'px;display:flex;align-items:center;padding:0 10px;background:'+bg+';border-bottom:1px solid #f1f5f9;gap:6px" title="'+esc(item.label)+' — '+esc(item.com)+'">';
+    html += '<div style="width:10px;height:10px;border-radius:3px;flex-shrink:0;background:'+item.color+'"></div>';
+    html += '<div style="flex:1;min-width:0">';
+    html += '<div style="font-size:10px;font-weight:800;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(item.num||item.c.adr||'—')+'</div>';
+    html += '<div style="font-size:9px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc((item.c.adr||'').substring(0,28))+'</div>';
+    html += '</div>';
+    // Badge %
+    html += '<div style="font-size:8px;font-weight:900;color:#fff;background:'+item.color+';border-radius:4px;padding:1px 4px;flex-shrink:0">'+item.pct+'%</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // Zone scrollable timeline
+  html += '<div style="flex:1;overflow-x:auto;position:relative" id="ganttScroll">';
+  html += '<div style="width:'+totalW+'px;position:relative">';
+
+  // Header mois
+  html += '<div style="display:flex;height:'+hdrH+'px;background:#0f172a;border-bottom:2px solid #f97316;position:sticky;top:0;z-index:3">';
+  months_arr.forEach(function(m) {
+    var lastDay = new Date(m.getFullYear(), m.getMonth()+1, 0);
+    var mStart = m < start ? start : m;
+    var mEnd   = lastDay > end ? end : lastDay;
+    var mW = Math.max(1, Math.round((mEnd - mStart)/86400000)+1) * dayPx;
+    html += '<div style="width:'+mW+'px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid rgba(255,255,255,.1)">';
+    html += '<div style="font-size:11px;font-weight:900;color:#f97316">'+MO[m.getMonth()]+'</div>';
+    html += '<div style="font-size:9px;color:rgba(255,255,255,.45)">'+m.getFullYear()+'</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // Corps (grille + barres)
+  html += '<div style="position:relative">';
+
+  // Lignes verticales mois
+  months_arr.forEach(function(m) {
+    var xp = xOff(m);
+    if (xp > 0 && xp < totalW)
+      html += '<div style="position:absolute;top:0;left:'+xp+'px;width:1px;height:100%;background:#f1f5f9;z-index:0"></div>';
+  });
+
+  // Ligne aujourd'hui
+  if (todayOff >= 0 && todayOff <= totalW) {
+    html += '<div style="position:absolute;top:0;left:'+todayOff+'px;width:2px;height:100%;background:#ef4444;opacity:.75;z-index:4"></div>';
+    html += '<div style="position:absolute;top:4px;left:'+(clamp(todayOff-14,0,totalW-36))+'px;background:#ef4444;color:#fff;font-size:8px;font-weight:900;padding:2px 5px;border-radius:4px;z-index:5;white-space:nowrap">Auj.</div>';
+  }
+
+  // Lignes de lignes (zebraing) + barres
+  items.forEach(function(item, i) {
+    var bg = i%2===0 ? 'transparent' : 'rgba(248,249,255,.8)';
+    var x1 = clamp(xOff(item.sd), 0, totalW);
+    var x2 = clamp(xOff(item.ed), 0, totalW);
+    var bw = Math.max(x2 - x1, 8);
+    var pw = Math.round(bw * item.pct / 100);
+    var top = Math.round((rowH - 22) / 2);
+
+    html += '<div style="height:'+rowH+'px;position:relative;background:'+bg+';border-bottom:1px solid #f1f5f9">';
+
+    // Fond zebra
+    if (bg !== 'transparent')
+      html += '<div style="position:absolute;inset:0;background:'+bg+'"></div>';
+
+    // Barre Gantt
+    html += '<div title="'+esc(item.label)+' ('+item.pct+'%) — '+item.sd.toLocaleDateString('fr-FR')+' → '+item.ed.toLocaleDateString('fr-FR')+'" ';
+    html += 'style="position:absolute;top:'+top+'px;left:'+x1+'px;width:'+bw+'px;height:22px;';
+    html += 'background:'+item.color+'28;border:1.5px solid '+item.color+';border-radius:6px;overflow:hidden;cursor:pointer;z-index:2">';
+
+    // Remplissage progression
+    if (pw > 0)
+      html += '<div style="position:absolute;top:0;left:0;width:'+pw+'px;height:100%;background:'+item.color+'70;border-radius:4px 0 0 4px"></div>';
+
+    // Texte dans barre
+    if (bw > 36)
+      html += '<div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 6px;font-size:8px;font-weight:900;color:'+item.color+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:1">'+esc(item.num||item.c.adr||'')+'</div>';
+
+    html += '</div>';
+    html += '</div>';
+  });
+
+  html += '</div>'; // corps
+  html += '</div>'; // totalW
+  html += '</div>'; // scroll
+  html += '</div>'; // flex
+
+  container.innerHTML = html;
+
+  // Scroll centré sur aujourd'hui
+  var sc = document.getElementById('ganttScroll');
+  if (sc && todayOff > 0)
+    sc.scrollLeft = Math.max(0, todayOff - sc.clientWidth/2);
+}
+
+function printGantt() {
+  var container = document.getElementById('ganttChart');
+  if (!container) return;
+  var h = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Planning Gantt</title>'
+    + '<style>body{font-family:Arial,sans-serif;margin:0;padding:16px}h1{font-size:16px;color:#f97316;margin-bottom:12px}'
+    + '@media print{body{padding:8px}}</style></head><body>'
+    + '<h1>📊 Planning Gantt — '+( document.getElementById('ganttLabel')||{textContent:''}).textContent+'</h1>'
+    + container.innerHTML
+    + '</body></html>';
+  printHtml(h, 'width=1200,height=800');
+}
+// ══════════════════════════════════════════════════════════════════════
 
 </script>
 
