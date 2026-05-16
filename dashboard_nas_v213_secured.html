@@ -418,7 +418,7 @@ body { background: linear-gradient(160deg,#fff7ed,#ffedd5,#fed7aa,#fef3c7) !impo
 .gtb:disabled{opacity:.25;cursor:not-allowed}
 .g-bar{user-select:none;-webkit-user-select:none;cursor:grab}
 .g-bar:active{cursor:grabbing}
-#ovGanttTask input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(1.5);cursor:pointer;opacity:.8}
+#ovGanttTask input[type="date"]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.9;filter:brightness(0) invert(1)}
 #ovGanttTask input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 #ovGanttTask input[type="date"]{color-scheme:dark}
 #pg-debourse.on,#pg-financier.on,#pg-pointage.on,#pg-vehicules.on,#pg-params.on,#pg-gantt.on {
@@ -16570,11 +16570,11 @@ ganttLoad();
       </div>
       <div class="fgr">
         <label style="color:#94a3b8">Date de début *</label>
-        <input type="date" id="gt_debut" style="background:#0f172a;border-color:#334155;color:#f1f5f9">
+        <input type="date" id="gt_debut" style="background:#0f172a;border-color:#334155;color:#f1f5f9;color-scheme:dark">
       </div>
       <div class="fgr">
         <label style="color:#94a3b8">Date de fin *</label>
-        <input type="date" id="gt_fin" style="background:#0f172a;border-color:#334155;color:#f1f5f9">
+        <input type="date" id="gt_fin" style="background:#0f172a;border-color:#334155;color:#f1f5f9;color-scheme:dark">
       </div>
       <div class="fgr">
         <label style="color:#94a3b8">Avancement (%)</label>
