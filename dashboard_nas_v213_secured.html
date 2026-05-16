@@ -1205,8 +1205,8 @@ window.addEventListener('load', function() {
 <div class="pg" id="pg-gantt">
   <div class="pg-content" style="padding:14px 16px;max-width:100%">
 
-    <!-- Toolbar -->
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;background:rgba(255,255,255,.9);padding:10px 14px;border-radius:14px;border:1px solid rgba(249,115,22,.18);box-shadow:0 2px 8px rgba(249,115,22,.08)">
+    <!-- Toolbar — sticky pendant le défilement vertical -->
+    <div id="ganttToolbarSticky" style="position:sticky;top:0;z-index:120;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;background:rgba(255,255,255,.97);padding:10px 14px;border-radius:14px;border:1px solid rgba(249,115,22,.22);box-shadow:0 4px 16px rgba(249,115,22,.12);backdrop-filter:blur(8px)">
       <button class="btn bp" onclick="ganttAddProjModal()" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none">+ Projet</button>
       <button class="btn bsm" onclick="ganttSyncChantiers()" style="background:linear-gradient(135deg,#10b981,#34d399);color:#fff;border:none" title="Importer automatiquement chantiers, planning équipes et débours">📥 Sync</button>
       <div style="width:1px;height:24px;background:#e2e8f0;margin:0 2px"></div>
@@ -1227,15 +1227,20 @@ window.addEventListener('load', function() {
       <button class="btn bsm" onclick="printGantt()" style="margin-left:auto;background:linear-gradient(135deg,#f97316,#fb923c);color:#fff;border:none">🖨️ Imprimer</button>
     </div>
 
-    <!-- Bandeau contextuel édition tâche -->
-    <div style="display:flex;align-items:center;gap:5px;padding:7px 12px;background:linear-gradient(135deg,#1e293b,#0f172a);border-radius:12px;margin-bottom:8px;min-height:46px;border:1px solid rgba(249,115,22,.2)">
-      <button id="gtbEdit" class="gtb" onclick="ganttTbEdit()" title="Modifier la tâche (double-clic sur la barre)">✏️</button>
-      <button id="gtbDone" class="gtb" onclick="ganttTbDone()" title="Marquer terminée / Rouvrir">✅</button>
-      <button id="gtbPrio" class="gtb" onclick="ganttTbPrio()" title="Changer la priorité">🚩</button>
-      <button id="gtbInfo" class="gtb" onclick="ganttTbInfo()" title="Voir les infos / Débours">ℹ️</button>
-      <div style="width:1px;height:22px;background:rgba(255,255,255,.15);margin:0 2px"></div>
-      <button id="gtbDel"  class="gtb" onclick="ganttTbDel()"  title="Supprimer la tâche" style="color:#f87171">🗑️</button>
-      <div style="width:1px;height:22px;background:rgba(255,255,255,.15);margin:0 2px"></div>
+    <!-- Bandeau contextuel — sticky sous la toolbar -->
+    <div id="ganttBandeauSticky" style="position:sticky;top:54px;z-index:119;display:flex;align-items:center;gap:5px;padding:7px 12px;background:linear-gradient(135deg,#1a2540,#0d1320);border-radius:12px;margin-bottom:8px;min-height:46px;border:1px solid rgba(249,115,22,.25);box-shadow:0 4px 16px rgba(0,0,0,.35)">
+      <button id="gtbEdit" class="gtb" onclick="ganttTbEdit()" title="Modifier (double-clic)">✏️</button>
+      <button id="gtbDone" class="gtb" onclick="ganttTbDone()" title="Terminée / Rouvrir">✅</button>
+      <button id="gtbPrio" class="gtb" onclick="ganttTbPrio()" title="Priorité">🚩</button>
+      <button id="gtbInfo" class="gtb" onclick="ganttTbInfo()" title="Infos / Débours">ℹ️</button>
+      <div style="width:1px;height:22px;background:rgba(255,255,255,.15);margin:0 1px"></div>
+      <button id="gtbCopy" class="gtb" onclick="ganttTbCopy()" title="Copier la tâche">📋</button>
+      <button id="gtbPaste" class="gtb" onclick="ganttTbPaste()" title="Coller (nouvelle tâche)">📌</button>
+      <button id="gtbDup"  class="gtb" onclick="ganttTbDup()"  title="Dupliquer la tâche">🔁</button>
+      <button id="gtbGoto" class="gtb" onclick="ganttTbGoto()" title="Centrer le calendrier sur la tâche">🎯</button>
+      <div style="width:1px;height:22px;background:rgba(255,255,255,.15);margin:0 1px"></div>
+      <button id="gtbDel"  class="gtb" onclick="ganttTbDel()"  title="Supprimer" style="color:#f87171">🗑️</button>
+      <div style="width:1px;height:22px;background:rgba(255,255,255,.15);margin:0 1px"></div>
       <button id="gtbUndo" class="gtb" onclick="ganttTbUndo()" title="Annuler la dernière modification">↩️</button>
       <div style="flex:1;border-left:1px solid rgba(255,255,255,.1);margin-left:6px;padding-left:10px;overflow:hidden">
         <div id="gtbLabel" style="font-size:11px;color:#64748b;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
@@ -15160,11 +15165,13 @@ function _ganttUpdateBandeau() {
   var task = ganttSelectedTaskId
     ? ganttTasks.find(function(t){ return t.id === ganttSelectedTaskId; })
     : null;
-  var btns = ['gtbEdit','gtbDone','gtbPrio','gtbInfo','gtbDel'];
+  var btns = ['gtbEdit','gtbDone','gtbPrio','gtbInfo','gtbDel','gtbCopy','gtbDup','gtbGoto'];
   btns.forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.disabled = !task;
   });
+  var pasteEl = document.getElementById('gtbPaste');
+  if (pasteEl) pasteEl.disabled = !_ganttCopied;
   var undoEl = document.getElementById('gtbUndo');
   if (undoEl) undoEl.disabled = !_ganttLastState;
   if (!lbl) return;
@@ -15239,6 +15246,75 @@ function ganttTbUndo() {
   ganttSave(); renderGantt();
   toast('Modification annulée ↩');
   _ganttUpdateBandeau();
+}
+
+// ── COPIER / COLLER / DUPLIQUER / CENTRER ─────────────────────────────
+var _ganttCopied = null;
+
+function ganttTbCopy() {
+  if (!ganttSelectedTaskId) return;
+  var t = ganttTasks.find(function(x){ return x.id===ganttSelectedTaskId; });
+  if (!t) return;
+  _ganttCopied = JSON.parse(JSON.stringify(t));
+  _ganttUpdateBandeau();
+  toast('Tâche copiée 📋');
+}
+
+function ganttTbPaste() {
+  if (!_ganttCopied) return;
+  var src  = _ganttCopied;
+  var proj = ganttProjects.find(function(p){ return p.id===src.projId; });
+  if (!proj) {
+    // Projet source supprimé → coller dans le premier projet disponible
+    proj = ganttProjects[0];
+    if (!proj) { toast('Aucun projet — créez-en un d\'abord', 'er'); return; }
+  }
+  _ganttSnapshot();
+  var newTask = JSON.parse(JSON.stringify(src));
+  newTask.id      = nextGTId++;
+  newTask.projId  = proj.id;
+  newTask.nom     = newTask.nom + ' (copie)';
+  newTask.debut   = _addDays(newTask.debut, 1);
+  newTask.fin     = _addDays(newTask.fin,   1);
+  newTask.pct     = 0;
+  delete newTask._dosId;
+  delete newTask._chanNum;
+  ganttTasks.push(newTask);
+  ganttSelectedTaskId = newTask.id;
+  ganttSave(); renderGantt();
+  _ganttUpdateBandeau();
+  toast('Tâche collée ✓ (+1 jour)');
+}
+
+function ganttTbDup() {
+  if (!ganttSelectedTaskId) return;
+  var t = ganttTasks.find(function(x){ return x.id===ganttSelectedTaskId; });
+  if (!t) return;
+  _ganttCopied = JSON.parse(JSON.stringify(t));
+  ganttTbPaste();
+}
+
+function ganttTbGoto() {
+  if (!ganttSelectedTaskId) return;
+  var t = ganttTasks.find(function(x){ return x.id===ganttSelectedTaskId; });
+  if (!t || !t.debut) return;
+  // Déplacer ganttStartDate pour centrer la tâche dans la fenêtre visible
+  var taskStart = new Date(t.debut); taskStart.setHours(0,0,0,0);
+  var totalDays = ganttZoom==='day'?28 : ganttZoom==='week'?84 : 182;
+  var offset = Math.round(totalDays / 2);
+  var newStart = new Date(taskStart.getTime() - offset*86400000);
+  ganttStartDate = newStart;
+  renderGantt();
+  ganttSelectedTaskId = t.id;
+  _ganttUpdateBandeau();
+  // Scroll horizontal sur la tâche
+  var sc = document.getElementById('ganttScroll');
+  if (sc) {
+    var dayPxV = ganttZoom==='day'?36 : ganttZoom==='week'?16 : 5.5;
+    var txOff  = Math.round(offset * dayPxV);
+    sc.scrollLeft = Math.max(0, txOff - sc.clientWidth/2);
+  }
+  toast('🎯 Vue centrée sur la tâche');
 }
 
 // ── COLOR PICKER TÂCHE ────────────────────────────────────────────────
