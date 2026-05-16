@@ -724,17 +724,147 @@ function showFbToastDash(msg) {
   el._timer = setTimeout(function(){ el.style.opacity = '0'; }, 4000);
 }
 
+// ── GESTION PARAMÈTRES NAS ────────────────────────────────────
+function loadNasSettings() {
+  var url = '';
+  var key = '';
+  try { url = localStorage.getItem('TB_NAS_URL') || ''; } catch(e) {}
+  try { key = localStorage.getItem('TB_NAS_KEY') || ''; } catch(e) {}
+  var urlEl = document.getElementById('biSyncUrl');
+  var keyEl = document.getElementById('biSyncKey');
+  if (urlEl) urlEl.value = url;
+  if (keyEl) keyEl.value = key;
+  // Statut
+  var st = document.getElementById('syncBiStatus');
+  if (st) st.textContent = _nasReady ? '🟢 NAS connecté' : '⚪ Non connecté';
+}
+
+function startBiSync() {
+  var urlEl = document.getElementById('biSyncUrl');
+  var keyEl = document.getElementById('biSyncKey');
+  var url = (urlEl ? urlEl.value : '').trim();
+  var key = (keyEl ? keyEl.value : '').trim();
+  if (!url) { toast('URL manquante', 'er'); return; }
+  var scheme = url.split(':')[0].toLowerCase();
+  if (scheme !== 'http' && scheme !== 'https') { toast('URL invalide — seuls http:// et https:// sont autorisés', 'er'); return; }
+  try {
+    localStorage.setItem('TB_NAS_URL', url);
+    if (key) localStorage.setItem('TB_NAS_KEY', key);
+  } catch(e) {}
+  _NAS_URL = url;
+  // Mettre à jour le header NAS des requêtes
+  var st = document.getElementById('syncBiStatus');
+  if (st) st.textContent = '⏳ Test de connexion…';
+  _nasGet('test_ping').then(function(r) {
+    _nasReady = !!(r && r.ok);
+    updateFbStatus(_nasReady);
+    if (_nasReady) {
+      showFbToastDash('🟢 NAS connecté — sync démarrée');
+      if (st) st.textContent = '🟢 NAS connecté';
+      fbListenFromChantierTP();
+      var iv = parseInt((document.getElementById('biSyncInterval') || {value:'30'}).value) || 30;
+      if (window._biSyncTimer) clearInterval(window._biSyncTimer);
+      window._biSyncTimer = setInterval(function() {
+        if (_nasReady) fbDashPush();
+      }, iv * 1000);
+      var sb = document.getElementById('biSyncStartBtn');
+      var st2 = document.getElementById('biSyncStopBtn');
+      if (sb) sb.style.display = 'none';
+      if (st2) st2.style.display = '';
+    } else {
+      if (st) st.textContent = '🔴 NAS inaccessible — vérifiez l\'URL et la clé';
+      showFbToastDash('🔴 NAS inaccessible');
+    }
+  });
+}
+
+function stopBiSync() {
+  if (window._biSyncTimer) { clearInterval(window._biSyncTimer); window._biSyncTimer = null; }
+  if (window._nasPollTimer) { clearInterval(window._nasPollTimer); window._nasPollTimer = null; }
+  _nasReady = false;
+  updateFbStatus(false);
+  var sb = document.getElementById('biSyncStartBtn');
+  var st = document.getElementById('biSyncStopBtn');
+  var ss = document.getElementById('syncBiStatus');
+  if (sb) sb.style.display = '';
+  if (st) st.style.display = 'none';
+  if (ss) ss.textContent = '⚪ Sync arrêtée';
+  showFbToastDash('⏹ Synchronisation arrêtée');
+}
+
+function pushNow() { nasSyncAll(); }
+
+// ── Injecter la clé API dans les requêtes NAS ─────────────────
+var _origNasGet = _nasGet, _origNasSet = _nasSet;
+_nasGet = function(docId) {
+  if (!_NAS_URL) return Promise.resolve(null);
+  var apiKey = '';
+  try { apiKey = localStorage.getItem('TB_NAS_KEY') || ''; } catch(e) {}
+  return fetch(_NAS_URL + '?doc=' + encodeURIComponent(docId), {
+    method: 'GET',
+    headers: apiKey ? {'X-API-Key': apiKey} : {}
+  }).then(function(r){ return r.json(); }).catch(function(e){ console.warn('NAS GET error', docId, e); return null; });
+};
+_nasSet = function(docId, data) {
+  if (!_NAS_URL) return Promise.resolve(null);
+  var apiKey = '';
+  try { apiKey = localStorage.getItem('TB_NAS_KEY') || ''; } catch(e) {}
+  return fetch(_NAS_URL + '?doc=' + encodeURIComponent(docId), {
+    method: 'POST',
+    headers: Object.assign({'Content-Type': 'application/json'}, apiKey ? {'X-API-Key': apiKey} : {}),
+    body: JSON.stringify(data)
+  }).then(function(r){ return r.json(); }).catch(function(e){ console.warn('NAS SET error', docId, e); return null; });
+};
+
+// ── SYNC COMPLET DASHBOARD → NAS (toutes les tables TB_*) ─────
+function nasSyncAll() {
+  if (!_nasReady) { showFbToastDash('⚠️ NAS non connecté'); return; }
+  var PUSH_KEYS = ['TB_D','TB_C','TB_PT','TB_EQ','TB_ABS','TB_EVAL','TB_VH','TB_ZONES','TB_RECL','TB_GANTT','TB_GANTT_NAMES','TB_DB','TB_P','TB_SEC','TB_PERMIS_CFG'];
+  var pushed = 0, errors = 0;
+  var btn = document.getElementById('nasSyncBtn');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  var promises = PUSH_KEYS.map(function(key) {
+    var val = null;
+    try { val = localStorage.getItem(key) || _store.getItem(key); } catch(e) {}
+    if (!val) return Promise.resolve();
+    var data;
+    try { data = JSON.parse(val); } catch(e) { data = val; }
+    return _nasSet(key, data).then(function(r) {
+      if (r && r.ok) pushed++; else errors++;
+    }).catch(function() { errors++; });
+  });
+  // Push aussi les données live (chan/dos/salaries/pointages peuvent différer du cache)
+  var liveDoc = {
+    source: 'dashboard',
+    updatedAt: new Date().toISOString(),
+    dos: typeof dos !== 'undefined' ? dos : [],
+    chan: typeof chan !== 'undefined' ? chan : []
+  };
+  promises.push(_nasSet('dashboard', liveDoc).catch(function(){}));
+  Promise.all(promises).then(function() {
+    var msg = errors === 0
+      ? '✅ NAS synchronisé (' + pushed + ' tables) — ' + new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})
+      : '⚠️ Sync partielle — ' + errors + ' erreur(s)';
+    showFbToastDash(msg);
+    if (btn) { btn.textContent = '🔄'; btn.disabled = false; }
+    try { _store.setItem('TB_SYNC_LAST', new Date().toISOString()); } catch(e) {}
+  });
+}
+
 window.addEventListener('load', function() {
+  // Charger l'URL NAS depuis localStorage avant le ping
+  try { _NAS_URL = localStorage.getItem('TB_NAS_URL') || ''; } catch(e) {}
   // Test connexion NAS au démarrage
   setTimeout(function(){
+    if (!_NAS_URL) { updateFbStatus(false); return; }
     _nasGet('test_ping').then(function(r){
-      _nasReady = (r !== null);
+      _nasReady = !!(r && r.ok);
       updateFbStatus(_nasReady);
       if (_nasReady) {
-        showFbToastDash('🟢 NAS connecté — snatrennes');
+        showFbToastDash('🟢 NAS connecté');
         fbListenFromChantierTP();
       } else {
-        showFbToastDash('🔴 NAS non accessible');
+        showFbToastDash('🔴 NAS non accessible — vérifiez l\'URL dans Paramètres');
       }
     });
   }, 1500);
@@ -872,9 +1002,10 @@ window.addEventListener('load', function() {
     <div style="display:flex;align-items:center;gap:10px"><button id="btnDash" onclick="goPage('dashboard',document.querySelector('.ni.on'))" style="display:none;padding:7px 16px;border-radius:10px;cursor:pointer;font-family:'Nunito',sans-serif;font-size:13px" title="Retour au Dashboard">⬅ Dashboard</button><div><div class="tb-t" id="pgT">Dashboard</div><div class="tb-d" id="pgD"></div></div></div>
     <div id="tbA"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:10px;padding-right:4px">
-      <div title="Statut Firebase temps réel" style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--t2)">
-        <div id="fbStatusDot" style="width:8px;height:8px;border-radius:50%;background:#94a3b8;transition:background 0.5s;" title="Firebase en attente..."></div>
-        <span style="font-size:10px;font-weight:600;opacity:0.7">SYNC</span>
+      <div title="Statut NAS" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t2)">
+        <button id="nasSyncBtn" onclick="nasSyncAll()" title="Synchroniser toutes les données avec le NAS" style="background:rgba(249,115,22,.15);border:1px solid rgba(249,115,22,.3);border-radius:8px;padding:4px 9px;cursor:pointer;font-size:13px;color:#f97316;font-family:inherit;transition:background .15s" onmouseover="this.style.background='rgba(249,115,22,.3)'" onmouseout="this.style.background='rgba(249,115,22,.15)'">🔄</button>
+        <div id="fbStatusDot" style="width:8px;height:8px;border-radius:50%;background:#94a3b8;transition:background 0.5s;" title="NAS en attente…"></div>
+        <span style="font-size:10px;font-weight:600;opacity:0.7">NAS</span>
       </div><img id="tbLogoImg" src="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCABXALkDASIAAhEBAxEB/8QAHQABAAEFAQEBAAAAAAAAAAAAAAcBBAUGCQIIA//EAE0QAAEDAwICBAgHDAcJAAAAAAECAwQABREGEgchEzFBUQgUFyJXYZXSGDJWkaW00xYjNjhCUnF0gYKEwxUkNDd1s/AzQ1NiY3KUobL/xAAbAQEAAwADAQAAAAAAAAAAAAAAAQIDBAUGB//EADERAAIBAgQEBAUDBQAAAAAAAAABAgMRBBIhMQUTQVFxgcHwFBUiM2EGkbEWMlLR4f/aAAwDAQACEQMRAD8A+aaVWlemMxWW0hpy86t1FF09p6H47c5e/oWOlQ3u2oUtXnLISMJSo8z2ViqljwQ/xh9L/wAX9UeqtSTjByXRAp8HLjN8jvpOJ9rT4OXGX5HfScT7WugNxmxbfCdmzX0MR2k7lrV1Af67K0q6X2VL8VFyup0vDnvBmJHTtM+VuOE9h6PdkcgCoAjJScgdPPic4bpe/MuoXPjFzwd+MLQy5pFCB3qukMfzaN+DtxhcTub0ilY703SGf5tfcK9NaUtsRcmbBirQ2Nzkq4LL68d6nHSVfOaDTGlrhFbkwoUdlLiQtqVbnCwsg9RS40QcftxWPzip/iiciPiH4OXGX5HfScT7WnwcuMvyO+k4n2tfZ9vvky3rlJi3P7poUB4szW8ATomDgkhIAcA6+oKI5gqPXuMCZFnw2pkJ9uRHeTubcQcpUK2hxSctkvfmQ4WOf/wcuMvyO+k4n2tPg5cZfkd9JxPta6D0q/zGr2XvzIyo58fBz4y/I76Tifa0+Dnxl+R30nE+1roPSnzGr2XvzGVHPj4OfGX5HfScT7Wq/Bz4y/I76Tifa10GpT5jV7L35jKjndeeAnFiz2ebd7lpToIUGO5JkO/0hFVsbQkqUrCXCTgAnABNRlXTPjL/AHQaz/wCd9XXXM2ufhK8qybkQ1YpVaUrllRSlKkClKUB5pSlVAqWPBE/GH0v/F/VHqiepW8ElYb8ILTTh6kpmKP7Ib1ZV/tS8GStz7J1feYhlT7vMT09t0+4luOwT5smeoAJGPytu9KR2BSietIIjmCuXN1xY7pdX/GZ8i6M9Ks/FQBu2toH5KB2DtPM5JJrL6syNO6Qhq/3wfuj/wDzPr5kn959w/pxWDkocWhKmHOifacQ8y5jOxxCgpJ+cCvj3HuKyp4+nTb+mLTf7+iMsRWyVIx6IlXjC0t3h5cdqSoNOR3lgfmNyG1r/ZtSa88HnGxw4tI3oGA7jn/1V1eaL1JC1XZ3EOsJamNpDc6G5hWwkc8fnIVzwe0deDkCIdb8M7Bpa4GQNPW2TZZLn3t9yG2tcZxR+I4ojJSSRtUf0E5xnusVX5Mfi6azq3Ttvc5EpZVmWp+91clQdf3272l0M3Bi4r2LBwl1Jbby2vHxkH/0cEcxUi6NvcczIVxhNFq0X9Swtk8jDnpzvQQOQ37V5I5b0Z5781EM2OzarUhi0sMQEKfbSEsNJSlO5YBISBjPOrlUm92mxyWoN3WQJKZqUOtI29KgpIPJOQMpHVXnuFcfVLETlVbySbst2nf+NTi0cSszzbPY+k6VBa9U6telLW/fZUeQ0sodYRHQ2hCh2bFAn5yeXaa3C1a/ks6GlXK4x25VyiyhDQhB6NMhagCgnr28j52AeokDsr1mF49hMTUnTTacU27q2i3No1oybS6EiUqDJuq9XzXEIN5kNvOr2ts2+OlOT3JCgonq7SaWrWmqY7DMuJeP6SbUkOJbmoTtdSRkDclIKcjtwcdeD1Vxf6pwN0/qyt2vbT35FfiafkTPdbrbLS0h25z40NDitqFPOBAUcZwM9ZxVrB1Np2dLbiQ73b5Ehw4Q22+lSlcs8gD3A1EOuNSP6iu9tcW1Jj27oUvw0rjkJLpQpLiS5jaVJwRgHszWKMt+BMhzYi30y2XtzAZjl5Sl7VDGwAk8iezsrHGfqVYfGrDqndaa6317K2pE6+WahYl7jL/dBrP/AACd9XXXM2ukfER+VK4A6jkzmy3Le0tKcfQU7SlZiqKhg9XPPKublfQOG/2SNpClVpXZlBSlKAUpSgPFVpSqgVKvgkIDnhB6abV1KEwH9sN6oqqWPBE/GH0x/F/VHqyr/al4Mlbn0xq1KhpXS89QP9QdetEs/wDDcB6PJ7gVs7R37099YJbcqTPt1vhvsx3ZstEfpXWi4lAOcnaFJz1d4qUtWW2FGnTo9xQU2PUO1t9wDzY0vAShwn8ndtQArqC0p7VVGpiTrBrjT9svaQ26i6M9FJHJqUkkpCknvyRlPWCe0YJ+Sca4S54+lWy3i2lL9/aKV6OepGdtOpear03qbQy7dqSBqKFIlCWiMWk29bIdQoKJQo9MoFJ29o5dYwali2ybdqzSbElTAdg3KKCtpwdihzSfWOYPrFYHjHAnTtLR1QIb8tcae0+40ygrWUDcCUpHNWNwOBzrI8MIEy2aCtMKewqPJQ0S40r4yNyirB9eCM13GHpciq6VONoWTXa93f0N4rLotiD7wy5EakW5xwumDdfFQ4rrWlEgBBPrKdufXmr24gGKQRkFaMj94VZ6ifVOvF8NvYclNNX1an3kf7NlIkhHnK6slQwEjmevq51e3D+yn/vR/wDQrwOKoOjjUrWWd28LnW1IZaq06mT1J+GWoP17+U3X6wrc3P0VdnXL5HsyYd4bf6d+GqSlR8XSkIDaFoUSd/LBzkdRr89S/hpqD9eH+S3X44V9yMo8+jGoGd/d/ZsDP72K7OhKMOKYqUo3SU9O5eDtWm/wzBNS9Q2q8RroxdLW7GhLLpdmWxUZI80jdgSVkgE5IO3I7RV3ZQyLREEd4vNBlOxwpxvGOvHZmr+C+xEvNsmymFvxo0tDrqEJ3HAzg47cHB/ZWPsQIs8QKACg0kKAIODjmMjly6q6jFVudhIyTSWZ/Sumi16vX0Mqk81NP87GeuRzw90oOxNxlAfM7VNJfhtYP1w/5Llerik+TrS68ck3WSCe7KXqs7VNTbL/AGu5usvPMxZPSOpaAKtpQtOQCRnmoV3GMnGHFMNObsrQ1NajtWi3+CVOMpA4Q6yBIybBOx/4665n10g4qT4904LajuMQqLEnTs9xvcMHBir6xXN+vsHC5Zoy8fQ5khSlVrtSpSlVpQClKUB4pVaVWwKVLHgifjD6Y/i/qj1RRUr+CL+MNpj+L+qPVlX+1LwZK3OgMuOxLiuxZLSHmHUlDjaxkKB6wRWpTLHcrdH8VbiNajtLaw4zFlLSJMfByEtrV5qwPyd5Ch2qNblSvMygpbmqdjV2tYWYHZP8etbo+MidDcZCT3bynYr9KVEeuqPavs6wWoCJ91dUMJRBhuOBR7ukwG0/pUoD11szxWGVlsZWEnaO89la5Fl39lDbc61F90pCluR31hI3KVgYPcNufXnsrB0OxN0YOdpt+Xpp2LKtbVksTCfGVW2CoeMvlHnhKnE8kcwCdmSSB52M51xcDhiytIktalSpO1ZStcxSetJ78Eecn5/01JEiTdmosNxNpW4662pT6EyVfeTy2p9Z588dxrxEnXJyQyh+zSWG1EBxfTqVty2lXUO5RKf3arLC0ptOUE2u+voQ9dWiPtQnQMq6PXiRbtRKbmpDzklh2S22XMlsI2AjaSG1HqAIT6xnM6K+4SXb5OnokG4dHPUp99mf0qiVICE/HWTg804wR3jqNblLNwaWtTEdbyS6EJT0qhhO0kqJz34GKxsK6Xt5LXTafkMrJQHU+MqPR5UM8+3AOeXdUrDU4zc1BXe7tr/BFlvYjO2q4dPNIkTU6rZawSbe8l1aRjBwVpT0ihzHIqIPUazdv0rw6mW59+zQ7wpDLyGwwmdKYAK1DklJUMJG7sGBgjsrdHJ18bjhZsjjjqk7g2iSrzfve7BJPXu83/Qq6jv3JUNDr9ucQ6p9tCmw8o7EEDcrOeeCT81ZRwGHSsqUbeC/0MseiNQjXrh81pJizqt9zctClJLaZMOQs7lKUQSpQ3A5So5zyxWB6DhQ4VFLGpwMgHD1wwMkD8711Ik2XfGWpKI9pW+62FhpXTKAcIbJScZ5AqwOvtq6mybizcEsMWp95jczl8SCAQtRCsDOcoAJOexScZ540qYanUtnhF27r/gaT3RqGuXra7wH1Ei0MyGYLOn7iwyh8KCwER3E89xz2dZ51ztroxxIkzZXCfWZmWt2IBpuatJW4VYUY7mU865z16DhMbQl4+hSW4pSldsVFKVWgKVWlKA8UpVagFKu7Rc7lZ7i1cbRcJdvms56KRFeU06jIKThSSCMgkcuwmrWlRuDa/KXxH9IGrPbEj36eUviP6QNWe2JHv1qlKry49gbX5S+I/pA1Z7Yke/VfKXxH9IGrPbEj361OlTy49gbZ5S+I/pA1X7Yke/Tyl8R/SBqz2xI9+tUpTlw7A2vyl8R/SBqv2xI9+nlL4j+kDVftiR79apSnLh2BtflL4j+kDVftiR79PKXxH9IGq/bEj361SlTy4dgbX5S+I/pA1X7Yke/VfKXxH9IGq/bEj361Oq05cOwNlm8QtfTYb0OZrjU0mM+2pp5l26vrQ4hQwpKklWCCCQQeutZqtKlRS2QFKUqwFKUoBSq0xUg8UpSqAUpSgFVpSpApSlAKUpQClKUAqtKVIFKUoBSlKAVWlKkCmKUoCtKUoD/2Q==" style="height:40px;object-fit:contain;max-width:150px" alt="Logo"></div>
   </div>
 
@@ -1753,10 +1884,16 @@ window.addEventListener('load', function() {
       </div>
 
       <!-- URL NAS -->
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;font-weight:800;color:#475569;margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em">URL du fichier sync.php sur le NAS</div>
+        <input type="text" id="biSyncUrl" placeholder="https://votre-nas/snat/sync.php" style="width:100%;font-size:12px;padding:9px 12px;border-radius:9px;border:1.5px solid var(--b2);box-sizing:border-box;font-family:monospace;outline:none">
+        <div style="font-size:10px;color:#94a3b8;margin-top:4px">Ex&nbsp;: <b>https://snat-btp.quickconnect.to/snat/sync.php</b> — Inclure le nom du fichier PHP</div>
+      </div>
+      <!-- Clé API NAS -->
       <div style="margin-bottom:12px">
-        <div style="font-size:11px;font-weight:800;color:#475569;margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em">URL du serveur NAS (sync.php)</div>
-        <input type="text" id="biSyncUrl" placeholder="https://votre-id.quickconnect.to" style="width:100%;font-size:12px;padding:9px 12px;border-radius:9px;border:1.5px solid var(--b2);box-sizing:border-box;font-family:monospace;outline:none">
-        <div style="font-size:10px;color:#94a3b8;margin-top:4px">Ex&nbsp;: https://snat-btp.quickconnect.to — Le fichier sync.php doit être dans le dossier web/ du NAS</div>
+        <div style="font-size:11px;font-weight:800;color:#475569;margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em">Clé API secrète (définie dans sync.php)</div>
+        <input type="password" id="biSyncKey" placeholder="••••••••••••" autocomplete="off" style="width:100%;font-size:12px;padding:9px 12px;border-radius:9px;border:1.5px solid var(--b2);box-sizing:border-box;font-family:monospace;outline:none">
+        <div style="font-size:10px;color:#94a3b8;margin-top:4px">Même valeur que <code>define('API_KEY', '...')</code> dans sync.php</div>
       </div>
 
       <!-- Intervalle -->
@@ -3934,7 +4071,7 @@ function goPage(p,el){
   if(bd) bd.style.display=(p==='dossiers'||p==='chantiers'||p==='debourse'||p==='planning'||p==='financier'||p==='pointage'||p==='vehicules'||p==='gantt')?'inline-flex':'none';
   try{
     if(p==='dashboard'){renderDash();}
-    else if(p==='params'){loadPF();renderEntreprises();renderUList();renderDList();updNN();setTimeout(function(){if(typeof renderUsersList==='function')renderUsersList();},100);}
+    else if(p==='params'){loadPF();renderEntreprises();renderUList();renderDList();updNN();setTimeout(function(){if(typeof renderUsersList==='function')renderUsersList();},100);loadNasSettings();}
     else if(p==='dossiers'){
       var secs=Array.from(new Set((dos||[]).map(function(d){return d.sec;}).filter(Boolean))).sort();
       var sel=document.getElementById('dFSec');
