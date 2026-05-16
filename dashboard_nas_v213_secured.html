@@ -418,6 +418,9 @@ body { background: linear-gradient(160deg,#fff7ed,#ffedd5,#fed7aa,#fef3c7) !impo
 .gtb:disabled{opacity:.25;cursor:not-allowed}
 .g-bar{user-select:none;-webkit-user-select:none;cursor:grab}
 .g-bar:active{cursor:grabbing}
+#ovGanttTask input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(1.5);cursor:pointer;opacity:.8}
+#ovGanttTask input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
+#ovGanttTask input[type="date"]{color-scheme:dark}
 #pg-debourse.on,#pg-financier.on,#pg-pointage.on,#pg-vehicules.on,#pg-params.on,#pg-gantt.on {
   background: linear-gradient(150deg,#fff7ed 0%,#ffedd5 50%,#fef3c7 100%) !important;
   min-height: calc(100vh - 65px) !important;
@@ -14964,16 +14967,13 @@ function renderGantt() {
       var pdone  = ptasks.filter(function(t){ return t.pct >= 100; }).length;
       var col    = p.couleur || '#6366f1';
       var isColl = !!ganttCollapsed[p.id];
-      leftHtml += '<div style="height:'+projH+'px;display:flex;align-items:center;padding:0 6px;background:linear-gradient(90deg,'+col+'18,transparent);border-bottom:2px solid '+col+'30;border-left:3px solid '+col+';gap:4px">';
-      leftHtml += '<button onclick="ganttToggle('+p.id+')" title="'+(isColl?'Déplier':'Replier')+'" style="background:none;border:none;color:'+col+';cursor:pointer;font-size:11px;padding:2px;line-height:1;flex-shrink:0">'+(isColl?'▶':'▼')+'</button>';
+      leftHtml += '<div style="height:'+projH+'px;display:flex;align-items:center;padding:0 6px;background:linear-gradient(90deg,'+col+'18,transparent);border-bottom:2px solid '+col+'30;border-left:3px solid '+col+';gap:4px;cursor:pointer" title="Clic : ajouter une tâche | Double-clic : modifier le projet" onclick="ganttAddTaskModal('+p.id+')" ondblclick="event.stopPropagation();ganttEditProjModal('+p.id+')">';
+      leftHtml += '<button onclick="event.stopPropagation();ganttToggle('+p.id+')" title="'+(isColl?'Déplier':'Replier')+'" style="background:none;border:none;color:'+col+';cursor:pointer;font-size:11px;padding:2px;line-height:1;flex-shrink:0">'+(isColl?'▶':'▼')+'</button>';
       leftHtml += '<div style="flex:1;min-width:0">';
       leftHtml += '<div style="font-size:11px;font-weight:900;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.nom)+'</div>';
       if (p.client) leftHtml += '<div style="font-size:9px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.client)+'</div>';
       leftHtml += '</div>';
       leftHtml += '<div style="font-size:8px;color:'+col+';background:'+col+'18;padding:2px 5px;border-radius:4px;flex-shrink:0;font-weight:700">'+pdone+'/'+ptasks.length+'</div>';
-      leftHtml += '<button onclick="ganttAddTaskModal('+p.id+')" title="Ajouter une tâche" style="background:'+col+'22;border:1px solid '+col+'44;border-radius:5px;color:'+col+';cursor:pointer;font-size:12px;padding:2px 5px;flex-shrink:0;font-weight:700;line-height:1">+</button>';
-      leftHtml += '<button onclick="ganttEditProjModal('+p.id+')" title="Modifier" style="background:none;border:none;cursor:pointer;font-size:11px;padding:1px 2px;flex-shrink:0">✏️</button>';
-      leftHtml += '<button onclick="ganttDelProj('+p.id+')" title="Supprimer" style="background:none;border:none;cursor:pointer;font-size:11px;padding:1px 2px;flex-shrink:0">🗑️</button>';
       leftHtml += '</div>';
     } else {
       var t = row.task;
